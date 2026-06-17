@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PS4 BORDER BREAK アセンシミュレータ</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1><span>PS4 BORDER BREAK</span><span>アセンシミュレーター</span></h1>
+        <p id="dataSummary"></p>
+      </div>
+      <div class="toolbar">
+        <button id="themeButton" type="button" title="ダークモード切替">◐</button>
+        <button id="resetButton" type="button" title="選択を初期化">↺</button>
+        <button id="copyButton" type="button" title="現在のアセンをコピー">⧉</button>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="status-board" aria-label="アセン結果">
+        <div class="status-title">
+          <h2>ステータス</h2>
+        </div>
+
+        <div class="status-content">
+          <div class="loadout-area">
+            <div id="classTabs" class="class-tabs" role="tablist" aria-label="兵装">
+              <button class="active" data-class="強襲" type="button">強襲</button>
+              <button data-class="重火力" type="button">重火力</button>
+              <button data-class="遊撃" type="button">遊撃</button>
+              <button data-class="支援" type="button">支援</button>
+            </div>
+            <div id="loadoutGrid" class="loadout-grid"></div>
+            <section id="selectedChipPanel" class="selected-chip-panel" aria-label="選択中チップ">
+              <div class="selected-chip-head">
+                <h2>選択中チップ</h2>
+                <span id="selectedChipSummary">0</span>
+              </div>
+              <div id="selectedChipList" class="selected-chip-list"></div>
+            </section>
+          </div>
+
+          <aside class="result-panel" aria-label="アセン結果">
+            <button id="mobileStatsToggle" class="mobile-stats-toggle" type="button">詳細ステータス</button>
+            <dl class="metrics">
+              <div>
+                <dt>積載猶予</dt>
+                <dd id="payloadCapacity">0 / 0</dd>
+              </div>
+              <div>
+                <dt>平均装甲</dt>
+                <dd id="armorSummary">-</dd>
+              </div>
+              <div>
+                <dt>ブースター</dt>
+                <dd id="boosterSummary">-</dd>
+              </div>
+              <div>
+                <dt>SP供給</dt>
+                <dd id="spSupplySummary">-</dd>
+              </div>
+              <div>
+                <dt>DEF耐久</dt>
+                <dd id="defDurabilitySummary">-</dd>
+              </div>
+              <div>
+                <dt>歩行</dt>
+                <dd id="walkSummary">-</dd>
+              </div>
+              <div>
+                <dt>ダッシュ</dt>
+                <dd id="dashSummary">-</dd>
+              </div>
+              <div>
+                <dt>ダッシュ回数</dt>
+                <dd id="dashCountSummary">-</dd>
+              </div>
+              <div>
+                <dt>ダッシュ消費</dt>
+                <dd id="dashCostSummary">-</dd>
+              </div>
+              <div>
+                <dt>巡航</dt>
+                <dd id="cruiseSummary">-</dd>
+              </div>
+              <div>
+                <dt>射撃補正</dt>
+                <dd id="shotSummary">-</dd>
+              </div>
+              <div>
+                <dt>索敵</dt>
+                <dd id="searchSummary">-</dd>
+              </div>
+              <div>
+                <dt>ロックオン</dt>
+                <dd id="lockonSummary">-</dd>
+              </div>
+              <div>
+                <dt>DEF回復</dt>
+                <dd id="defRecoverySummary">-</dd>
+              </div>
+              <div>
+                <dt>反動吸収</dt>
+                <dd id="recoilSummary">-</dd>
+              </div>
+              <div>
+                <dt>リロード</dt>
+                <dd id="reloadSummary">-</dd>
+              </div>
+              <div>
+                <dt>武器変更</dt>
+                <dd id="switchSummary">-</dd>
+              </div>
+              <div>
+                <dt>予備弾数</dt>
+                <dd id="ammoSummary">-</dd>
+              </div>
+              <div>
+                <dt>エリア移動</dt>
+                <dd id="areaMoveSummary">-</dd>
+              </div>
+            </dl>
+            <section class="extra-condition-panel" aria-label="追加条件">
+              <h2>追加条件</h2>
+              <label class="extra-condition-row">
+                <input id="includeRequestWeight" type="checkbox">
+                <span>要請兵器装備</span>
+                <b id="requestWeightValue">0</b>
+              </label>
+              <label class="extra-condition-row">
+                <input id="includeSatelliteBunkerWeight" type="checkbox">
+                <span>サテライトバンカー</span>
+                <b id="satelliteBunkerWeightValue">600</b>
+              </label>
+            </section>
+          </aside>
+        </div>
+
+      </section>
+
+      <section class="workspace">
+        <section class="controls-panel chip-accordion collapsed" data-chip-accordion>
+          <div class="section-head chip-head">
+            <h2>積載関連チップ</h2>
+            <button class="accordion-toggle" type="button" aria-expanded="false">開く</button>
+            <div id="loadoutChipTabs" class="chip-tabs" role="tablist" aria-label="積載関連チップ部位">
+              <button data-chip-table="頭部チップ" type="button">頭</button>
+              <button data-chip-table="胴部チップ" type="button">胴</button>
+              <button class="disabled" data-chip-table="腕部チップ" type="button" disabled>腕</button>
+              <button class="active" data-chip-table="脚部チップ" type="button">脚</button>
+            </div>
+          </div>
+          <div id="loadoutChipList" class="chip-list"></div>
+        </section>
+
+        <section class="controls-panel chip-accordion collapsed" data-chip-accordion>
+          <div class="section-head chip-head">
+            <h2>ステータス補正チップ</h2>
+            <button class="accordion-toggle" type="button" aria-expanded="false">開く</button>
+            <div id="statChipTabs" class="chip-tabs" role="tablist" aria-label="ステータス補正チップ部位">
+              <button class="active" data-stat-chip-table="頭部チップ" type="button">頭</button>
+              <button data-stat-chip-table="胴部チップ" type="button">胴</button>
+              <button data-stat-chip-table="腕部チップ" type="button">腕</button>
+              <button data-stat-chip-table="脚部チップ" type="button">脚</button>
+            </div>
+          </div>
+          <div id="statChipList" class="chip-list"></div>
+        </section>
+
+        <aside class="detail-card">
+          <h2>詳細</h2>
+          <div id="detailPanel" class="detail-panel"></div>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="site-credit">Created by ぷっく</footer>
+
+    <div id="itemPicker" class="item-picker hidden" role="dialog" aria-modal="true" aria-labelledby="itemPickerTitle">
+      <div class="item-picker-backdrop" data-picker-close></div>
+      <section class="item-picker-panel">
+        <header class="item-picker-head">
+          <h2 id="itemPickerTitle">選択</h2>
+          <button id="itemPickerClose" type="button" title="閉じる">×</button>
+        </header>
+        <input id="itemPickerSearch" class="item-picker-search" type="search" placeholder="名前・系統で検索" autocomplete="off" />
+        <div id="itemPickerFilters" class="item-picker-filters"></div>
+        <div id="itemPickerDetails" class="item-picker-details hidden"></div>
+        <div id="itemPickerList" class="item-picker-list"></div>
+      </section>
+    </div>
+
+    <script src="./data.bundle.js?v=20260617-10"></script>
+    <script src="./app.js?v=20260617-10"></script>
+  </body>
+</html>
