@@ -1619,8 +1619,8 @@ function weaponQuickKeys(item, slot = "") {
     "秒間火力",
     "マガジン火力",
     "総火力",
-    "爆発半径",
     "爆発 半径",
+    "爆発半径",
     "爆発半径(充填時)",
     "爆発半径(最大充填)",
     "爆発回数",
@@ -1691,8 +1691,8 @@ function requestWeaponQuickKeys(item) {
     "充填時間",
     "装弾数",
     "連射速度",
-    "爆発半径",
     "爆発 半径",
+    "爆発半径",
     "リロード",
     "索敵範囲",
     "稼働時間",
@@ -1759,6 +1759,7 @@ function escapeHtml(value) {
 
 function statDisplayLabel(key) {
   if (key === "修理速度 自己修復") return "修理速度/自己修復";
+  if (key === "爆発 半径") return "爆発半径";
   return key;
 }
 
