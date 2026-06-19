@@ -1701,9 +1701,14 @@ function requestWeaponQuickKeys(item) {
     "修理量",
     "有効距離",
   ];
+  const seenLabels = new Set();
   return preferred.filter((key) => {
     const value = requestWeaponStatValue(item, key);
-    return value !== undefined && value !== null && value !== "" && value !== "-";
+    if (value === undefined || value === null || value === "" || value === "-") return false;
+    const label = statDisplayLabel(key);
+    if (seenLabels.has(label)) return false;
+    seenLabels.add(label);
+    return true;
   });
 }
 
