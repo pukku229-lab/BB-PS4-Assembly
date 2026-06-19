@@ -39,6 +39,8 @@ const statKeys = [
   "加速",
   "重量耐性",
   "威力",
+  "通常威力",
+  "特殊威力",
   "装弾数",
   "連射速度",
   "射撃精度",
@@ -195,15 +197,27 @@ function getArmorOptions(part) {
   });
 }
 
-function getWeaponOptions(slot) {
+function getWeaponOptions(slot, weaponClass = state.weaponClass) {
   const seen = new Set();
   return (data.datasets.weapons || []).filter((item) => {
-    if (item.class !== state.weaponClass || item.slot !== slot || !item.重量) return false;
+    if (item.class !== weaponClass || item.slot !== slot || !item.重量) return false;
     const key = compactName(item.名称);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function weaponStateKey(slot, weaponClass = state.weaponClass) {
+  return `${weaponClass}:${slot}`;
+}
+
+function selectedWeaponBase(slot) {
+  return state.weapons[weaponStateKey(slot)] || null;
+}
+
+function setSelectedWeaponBase(slot, item, weaponClass = state.weaponClass) {
+  state.weapons[weaponStateKey(slot, weaponClass)] = item || null;
 }
 
 function getRequestWeaponOptions() {
@@ -225,7 +239,7 @@ function weaponVariants(item) {
 }
 
 function weaponModeKey(slot) {
-  return `${state.weaponClass}:${slot}:${compactName(state.weapons[slot]?.名称 || "")}`;
+  return `${state.weaponClass}:${slot}:${compactName(selectedWeaponBase(slot)?.名称 || "")}`;
 }
 
 function weaponModeIndex(slot) {
@@ -233,7 +247,7 @@ function weaponModeIndex(slot) {
 }
 
 function activeWeaponItem(slot) {
-  const base = state.weapons[slot];
+  const base = selectedWeaponBase(slot);
   const variants = weaponVariants(base);
   const index = weaponModeIndex(slot);
   return variants[index] || variants[0] || base;
@@ -317,8 +331,7 @@ function loadoutChips() {
 }
 
 function isStatChip(chip) {
-  const text = `${chip.名称 || ""} ${chip.効果 || ""}`;
-  return /射撃補正|索敵|ロックオン|DEF回復|ブースター|ブースト|SP供給|エリア移動|DEF耐久|反動吸収|リロード|武器変更|予備弾数|歩行|ダッシュ|巡航|加速強化|最高速到達|ジャンプ適性|体勢制御適性|爆風範囲拡大|ニュード威力上昇|実弾速射|散弾拡散率制御|高速充填|強化チャージ|パワースロー|設置物補強|機体修理適性|対物修理適性/.test(text) && !isLoadoutChip(chip);
+  return !isLoadoutChip(chip);
 }
 
 function statChips() {
@@ -435,6 +448,7 @@ function chipEffects() {
   let weaponSwitch = 0;
   let ammo = 0;
   let dashCostReduction = 0;
+  const armorByPart = Object.fromEntries(parts.map((part) => [part, 0]));
 
   for (const chip of selected) {
     const effect = chip.効果 || "";
@@ -460,6 +474,8 @@ function chipEffects() {
     }
 
     tolerance += chipEffectBonus(chip, "重量耐性") * count * multiplier;
+    const part = chipTableParts[chip.table];
+    if (part) armorByPart[part] += chipEffectBonus(chip, "装甲") * count * multiplier;
     walk += chipEffectBonus(chip, "歩行") * count * multiplier;
     dash += chipEffectBonus(chip, "ダッシュ") * count * multiplier;
     cruise += chipEffectBonus(chip, "巡航") * count * multiplier;
@@ -501,6 +517,7 @@ function chipEffects() {
     weaponSwitch,
     ammo,
     dashCostReduction,
+    armorByPart,
   };
 }
 
@@ -517,7 +534,10 @@ function weaponChipEffects() {
     repairAlly: 0,
     repairObject: 0,
     quickReload: 0,
+    meleePower: 0,
   };
+  const armorWeight = selectedArmorItems().reduce((sum, item) => sum + resolvedWeight(item, getEnhanceLevel("armor", item.part)), 0);
+  const meleeWeightSteps = Math.max(0, Math.floor((armorWeight - 2000) / 10));
 
   for (const chip of selectedChipItems()) {
     const count = chip.count || 0;
@@ -541,9 +561,15 @@ function weaponChipEffects() {
     if (name.includes("機体修理適性")) effects.repairAlly += amount;
     if (name.includes("対物修理適性")) effects.repairObject += amount;
     if (name.includes("クイックリロード")) effects.quickReload += percentBefore(effect, "速く") * count * multiplier;
+    if (name.includes("近接攻撃強化")) effects.meleePower += meleeWeightSteps * meleePowerRate(effect) * count * multiplier;
   }
 
   return effects;
+}
+
+function meleePowerRate(effect) {
+  const match = String(effect || "").match(/10毎に\s*(\d+(?:\.\d+)?)%/);
+  return match ? Number(match[1]) : 0;
 }
 
 function percentBefore(text, word) {
@@ -680,7 +706,7 @@ function baseValue(item, key) {
   const value = item?.[key];
   if (value === undefined || value === null) return "";
   const parts = splitValues(value);
-  if (parts.length >= 2 && parseEnhancements(item).some((entry) => entry.key === key)) {
+  if (parts.length >= 2 && parseEnhancements(item).some((entry) => entry.key === key || enhancementAppliesToKey(entry.key, key))) {
     return parts[0];
   }
   return normalize(value);
@@ -690,9 +716,16 @@ function resolvedValue(item, key, level) {
   let value = baseValue(item, key);
   const enhancements = parseEnhancements(item).filter((entry) => (entry.stage || 1) <= level);
   for (const entry of enhancements) {
-    if (entry.key === key) value = entry.value;
+    if (entry.key === key || enhancementAppliesToKey(entry.key, key)) value = entry.value;
   }
   return value || "-";
+}
+
+function enhancementAppliesToKey(enhancementKey, valueKey) {
+  if (!enhancementKey || !valueKey || enhancementKey === valueKey) return false;
+  const normalizedEnhancement = normalize(enhancementKey).replace(/\s+/g, "");
+  const normalizedValue = normalize(valueKey).replace(/\s+/g, "");
+  return normalizedValue.startsWith(`${normalizedEnhancement}(`);
 }
 
 function resolvedWeight(item, level) {
@@ -773,9 +806,11 @@ function setDefaults() {
     state.armor[part] = getArmorOptions(part)[0] || null;
     if (state.enhance[itemKey("armor", part)] === undefined) setEnhanceLevel("armor", part, 3);
   }
-  for (const slot of weaponSlots) {
-    state.weapons[slot] = getWeaponOptions(slot)[0] || null;
-    if (state.enhance[itemKey("weapon", slot)] === undefined) setEnhanceLevel("weapon", slot, 3);
+  for (const weaponClass of Object.keys(weaponPickerRules)) {
+    for (const slot of weaponSlots) {
+      setSelectedWeaponBase(slot, getWeaponOptions(slot, weaponClass)[0] || null, weaponClass);
+      if (state.enhance[itemKey("weapon", slot)] === undefined) setEnhanceLevel("weapon", slot, 3);
+    }
   }
   state.requestWeapon = getRequestWeaponOptions()[0] || null;
   state.focused = state.armor.頭 || null;
@@ -837,7 +872,7 @@ function pickerOptions() {
 
 function pickerSelectedItem() {
   if (state.picker.scope === "armor") return state.armor[state.picker.label];
-  if (state.picker.scope === "weapon") return state.weapons[state.picker.label];
+  if (state.picker.scope === "weapon") return selectedWeaponBase(state.picker.label);
   if (state.picker.scope === "request") return state.requestWeapon;
   return null;
 }
@@ -1213,7 +1248,7 @@ function choosePickerItem(item) {
     state.armor[state.picker.label] = item;
     state.focused = item;
   } else if (state.picker.scope === "weapon") {
-    state.weapons[state.picker.label] = item;
+    setSelectedWeaponBase(state.picker.label, item);
     delete state.weaponModes[weaponModeKey(state.picker.label)];
     state.focused = activeWeaponItem(state.picker.label);
   } else if (state.picker.scope === "request") {
@@ -1399,7 +1434,7 @@ function renderLoadout() {
 
   for (const slot of weaponSlots) {
     const options = getWeaponOptions(slot);
-    if (!options.includes(state.weapons[slot])) state.weapons[slot] = options[0] || null;
+    if (!options.includes(selectedWeaponBase(slot))) setSelectedWeaponBase(slot, options[0] || null);
     const level = getEnhanceLevel("weapon", slot);
     const activeWeapon = activeWeaponItem(slot);
 
@@ -1412,7 +1447,7 @@ function renderLoadout() {
     const row = document.createElement("div");
     row.className = "select-row";
 
-    const select = renderItemSelectButton("weapon", slot, state.weapons[slot], options.length);
+    const select = renderItemSelectButton("weapon", slot, selectedWeaponBase(slot), options.length);
     select.addEventListener("click", () => {
       openItemPicker("weapon", slot);
       state.focused = activeWeaponItem(slot);
@@ -1487,7 +1522,7 @@ function renderWeaponModeToggle(slot) {
 }
 
 function weaponModeOptions(slot) {
-  const base = state.weapons[slot];
+  const base = selectedWeaponBase(slot);
   const variants = weaponVariants(base);
   const typeFieldModes = weaponTypeFieldModes(base);
   if (typeFieldModes.length) return typeFieldModes.map((label, index) => ({ label, index }));
@@ -1753,21 +1788,33 @@ function quickStatMarkup(item, key, label, level, value, slot = "") {
     }
   }
 
-  if (item?.group !== "weapons" || !/\([^)]*\d/.test(text)) {
+  if (item?.group !== "weapons") {
     return { html: formatStatText(text), partial: false };
   }
 
   const base = typedValue(resolvedValue(item, key, level), slot);
-  const start = lastNumber(base);
-  const end = lastNumber(text);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) {
-    return { html: formatStatText(text), partial: false };
-  }
+  const parentheticalChange = parentheticalOnlyMarkup(base, text, label);
+  if (parentheticalChange) return parentheticalChange;
 
-  const delta = lowerIsBetter(label) ? start - end : end - start;
+  return { html: formatStatText(text), partial: false };
+}
+
+function parentheticalOnlyMarkup(baseValue, value, label = "") {
+  const baseText = String(baseValue || "");
+  const text = String(value || "");
+  if (!/\([^)]*\d/.test(baseText) || !/\([^)]*\d/.test(text)) return null;
+
+  const baseMain = firstNumber(baseText);
+  const currentMain = firstNumber(text);
+  const baseParen = lastNumber(baseText);
+  const currentParen = lastNumber(text);
+  if (!Number.isFinite(baseMain) || !Number.isFinite(currentMain) || baseMain !== currentMain) return null;
+  if (!Number.isFinite(baseParen) || !Number.isFinite(currentParen) || baseParen === currentParen) return null;
+
+  const delta = lowerIsBetter(label) ? baseParen - currentParen : currentParen - baseParen;
   const className = delta > 0 ? "positive" : "danger";
   const match = text.match(/^(.*)(\([^)]*\d[^)]*\))(.*)$/);
-  if (!match) return { html: formatStatText(text), partial: false };
+  if (!match) return null;
 
   return {
     html: `${formatStatText(match[1])}<span class="${className}">${formatStatText(match[2])}</span>${formatStatText(match[3])}`,
@@ -1856,17 +1903,18 @@ function typeStatLabel(key) {
 
 function quickStatValue(item, key, level, effects, weaponEffects, slot = "") {
   const value = typedValue(resolvedValue(item, key, level), slot);
+  if (item?.group === "armor" && key === "装甲") return statText(item, key, level, effects.armorByPart?.[item.part] || 0, "%");
   if (item?.group !== "weapons") return value;
   const label = typeStatLabel(key);
   if (key === "リロード" || label === "リロード") return adjustedReloadText(value, effects, weaponEffects);
-  if (key === "装弾数" || label === "装弾数") return adjustedAmmoText(value, effectiveAmmoBonus(effects));
-  if (key === "所持数") return adjustedCountText(value, effectiveAmmoBonus(effects));
-  if (key === "総火力") return adjustedPercentText(value, effectiveAmmoBonus(effects));
+  if (key === "装弾数" || label === "装弾数") return adjustedAmmoText(value, applicableAmmoBonus(item, effects));
+  if (key === "所持数") return adjustedCountText(value, applicableAmmoBonus(item, effects));
+  if (key === "総火力") return adjustedPercentText(value, applicableAmmoBonus(item, effects));
   if (key === "射撃精度") return appendBonusNote(value, effectiveShotBonus(effects), "射補");
   if (key === "反動") return appendBonusNote(value, effectiveRecoilBonus(effects), "反動吸収");
-  if ((key.includes("爆発") && key.includes("半径")) || label === "爆発半径") return adjustedAddText(value, applicableBlastRadius(item, weaponEffects));
-  if (isPowerLikeKey(key) || isPowerLikeKey(label)) return adjustedPowerText(value, item, label, weaponEffects);
-  if (key.includes("連射") && key.includes("速度")) return adjustedPercentText(value, applicableLiveFireRate(item, weaponEffects));
+  if ((key.includes("爆発") && key.includes("半径")) || label === "爆発半径") return adjustedAddText(value, applicableBlastRadius(item, weaponEffects, key));
+  if (isPowerLikeKey(key) || isPowerLikeKey(label)) return adjustedPowerText(value, item, key, label, weaponEffects);
+  if (key.includes("連射") && key.includes("速度")) return adjustedPercentText(value, applicableLiveFireRate(item, weaponEffects, key));
   if (key === "拡散率") return adjustedPercentText(value, -weaponEffects.spreadControl);
   if (key === "弾速" || key === "飛行速度" || key === "滑走速度") return adjustedAddText(value, weaponEffects.projectileSpeed);
   if (key === "充填時間") return adjustedTimeBySpeedText(value, weaponEffects.chargeSpeed);
@@ -1895,6 +1943,11 @@ function typedValue(value, slot) {
 
 function effectiveAmmoBonus(effects) {
   return percentValue(resolvedValue(state.armor.腕, "予備弾数", getEnhanceLevel("armor", "腕"))) + (effects.ammo || 0);
+}
+
+function applicableAmmoBonus(item, effects) {
+  if (!["主武器", "副武器"].includes(item?.slot)) return 0;
+  return effectiveAmmoBonus(effects);
 }
 
 function effectiveShotBonus(effects) {
@@ -1943,39 +1996,58 @@ function appendBonusNote(value, amount = 0, label = "") {
   return `${value} (${label}${sign}${trimNumber(amount, 2)}%)`;
 }
 
-function adjustedPowerText(value, item, key, weaponEffects) {
-  let percent = applicableNewdPower(item, weaponEffects);
-  if (key.includes("最大充填") || key === "最大充填") percent += weaponEffects.maxChargePower || 0;
+function adjustedPowerText(value, item, key, label, weaponEffects) {
+  let percent = applicableNewdPower(item, weaponEffects, key) + applicableMeleePower(item, weaponEffects, key);
+  if (label.includes("最大充填") || label === "最大充填") percent += weaponEffects.maxChargePower || 0;
 
   let adjusted = adjustedPercentText(value, percent);
-  if (weaponEffects.maxChargePower && !key.includes("最大充填") && /\([^)]*\d/.test(adjusted)) {
+  if (weaponEffects.maxChargePower && !label.includes("最大充填") && /\([^)]*\d/.test(adjusted)) {
     adjusted = adjustParentheticalNumbers(adjusted, weaponEffects.maxChargePower);
   }
   return adjusted;
 }
 
-function applicableBlastRadius(item, weaponEffects) {
-  return weaponEffects.blastRadius * weaponAttributeFactor(item, /爆発|爆風/);
+function applicableBlastRadius(item, weaponEffects, key = "") {
+  return weaponEffects.blastRadius * weaponAttributeFactor(item, /爆発|爆風/, key);
 }
 
-function applicableNewdPower(item, weaponEffects) {
-  return weaponEffects.newdPower * weaponAttributeFactor(item, /ニュード/);
+function applicableNewdPower(item, weaponEffects, key = "") {
+  return weaponEffects.newdPower * weaponAttributeFactor(item, /ニュード/, key);
 }
 
-function applicableLiveFireRate(item, weaponEffects) {
-  return weaponEffects.liveFireRate * weaponAttributeFactor(item, /実弾/);
+function applicableMeleePower(item, weaponEffects, key = "") {
+  return weaponEffects.meleePower * weaponAttributeFactor(item, /近接/, key);
+}
+
+function applicableLiveFireRate(item, weaponEffects, key = "") {
+  return weaponEffects.liveFireRate * weaponAttributeFactor(item, /実弾/, key);
 }
 
 function hasWeaponText(item, pattern) {
   return pattern.test(weaponText(item));
 }
 
-function weaponAttributeFactor(item, pattern) {
-  const text = weaponText(item);
+function weaponAttributeFactor(item, pattern, key = "") {
+  const text = weaponAttributeText(item, key);
   if (!pattern.test(text)) return 0;
   const label = pattern.source.includes("実弾") ? "実弾" : pattern.source.includes("ニュード") ? "ニュード" : "(?:爆発|爆風)";
   const match = text.match(new RegExp(`${label}\\s*(\\d+(?:\\.\\d+)?)\\s*%`));
   return match ? Number(match[1]) / 100 : 1;
+}
+
+function weaponAttributeText(item, key = "") {
+  const fullText = weaponText(item);
+  const mode = normalize(key).match(/^Type([AB])/i)?.[1];
+  if (!mode) return fullText;
+
+  const current = new RegExp(`Type${mode}\\s*[:：]?`, "i");
+  const start = fullText.search(current);
+  if (start < 0) return fullText;
+
+  const nextMode = mode === "A" ? "B" : "A";
+  const rest = fullText.slice(start);
+  const next = rest.search(new RegExp(`\\sType${nextMode}\\s*[:：]?`, "i"));
+  return next > 0 ? rest.slice(0, next) : rest;
 }
 
 function weaponText(item) {
@@ -2189,7 +2261,7 @@ function renderTotals() {
   const payloadMargin = payloadLimit - totalWeight;
   const overweight = Math.max(0, -payloadMargin) * Math.max(0, 1 - effects.overweightReduction / 100);
   const averageArmor = armorItems.length
-    ? armorItems.reduce((sum, item) => sum + armorPercent(item, getEnhanceLevel("armor", item.part)), 0) / armorItems.length
+    ? armorItems.reduce((sum, item) => sum + armorPercent(item, getEnhanceLevel("armor", item.part)) + (effects.armorByPart?.[item.part] || 0), 0) / armorItems.length
     : 0;
 
   setMetric("payloadCapacity", `${payloadMargin.toLocaleString()} (${totalWeight.toLocaleString()} / ${payloadLimit.toLocaleString()})`, payloadMargin < 0 ? -1 : effects.tolerance);
@@ -2307,9 +2379,7 @@ function renderDetail() {
     }
     const display = key === "レアリティ"
       ? rarityDisplay(item)
-      : statKeys.includes(key)
-        ? resolvedValue(item, key, level)
-        : value;
+      : detailDisplayValue(item, key, value, level);
     const row = document.createElement("div");
     row.className = "detail-row";
     row.innerHTML = `<b>${statDisplayLabel(key)}</b><span>${display}</span>`;
@@ -2317,6 +2387,33 @@ function renderDetail() {
   }
 
   if (hasTypeFields && !renderedTypeRows) renderDetailTypeRows(panel, item, level);
+}
+
+function detailDisplayValue(item, key, value, level) {
+  if (statKeys.includes(key)) {
+    const resolved = resolvedValue(item, key, level);
+    return item?.group === "weapons" ? quickStatValue(item, key, level, chipEffects(), weaponChipEffects(), item.slot) : resolved;
+  }
+
+  if (isActionChip(item) && /威力|ダメージ/.test(key)) {
+    return adjustedActionPowerText(value, weaponChipEffects().meleePower || 0);
+  }
+
+  return value;
+}
+
+function isActionChip(item) {
+  if (!item || !String(item.table || "").includes("チップ")) return false;
+  return !item.最大装着 && !firstNumber(item.最大装着) && /攻撃|蹴り|体当たり|衝撃波|スライディング|タックル|インパクト|キック|バースト/.test(`${item.名称 || ""} ${item.効果 || ""}`);
+}
+
+function adjustedActionPowerText(value, percent = 0) {
+  if (!percent || value === "-") return value;
+  const text = String(value || "");
+  const match = text.match(/^(\s*-?\d+(?:\.\d+)?(?:\(-?\d+(?:\.\d+)?\))?)/);
+  if (!match) return value;
+  const adjusted = match[1].replace(/-?\d+(?:\.\d+)?/g, (number) => trimNumber(Number(number) * (1 + percent / 100), 2));
+  return `${adjusted}${text.slice(match[1].length)}`;
 }
 
 function applyTheme() {
@@ -2342,7 +2439,7 @@ function copyBuild() {
   const lines = [];
   for (const part of parts) lines.push(`${part}: ${labelOf(state.armor[part])}`);
   lines.push(`兵装: ${state.weaponClass}`);
-  for (const slot of weaponSlots) lines.push(`${slot}: ${labelOf(state.weapons[slot])}`);
+  for (const slot of weaponSlots) lines.push(`${slot}: ${labelOf(selectedWeaponBase(slot))}`);
   lines.push(`要請兵器: ${labelOf(state.requestWeapon)}${state.includeRequestWeight ? "" : "（積載除外）"}`);
   lines.push(`サテライトバンカー: ${state.includeSatelliteBunkerWeight ? "装備" : "なし"}`);
   const chips = selectedChipItems().map((chip) => `${chip.名称}x${chip.count}`).join(", ");
@@ -2358,10 +2455,10 @@ document.querySelectorAll("[data-class]").forEach((button) => {
     document.querySelectorAll("[data-class]").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
     state.weaponClass = button.dataset.class;
-    state.weapons = {};
-    state.weaponModes = {};
-    for (const slot of weaponSlots) state.weapons[slot] = getWeaponOptions(slot)[0] || null;
-    state.focused = state.weapons.主武器 || null;
+    for (const slot of weaponSlots) {
+      if (!selectedWeaponBase(slot)) setSelectedWeaponBase(slot, getWeaponOptions(slot)[0] || null);
+    }
+    state.focused = activeWeaponItem("主武器") || null;
     render();
   });
 });
